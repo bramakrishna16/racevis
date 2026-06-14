@@ -1,0 +1,21 @@
+#!/bin/sh
+# Pre-commit hook — runs golangci-lint before every commit.
+# Blocks the commit if lint fails.
+# Install: bash scripts/install-hooks.sh
+
+echo "[racevis] running golangci-lint..."
+
+if ! command -v golangci-lint > /dev/null 2>&1; then
+  echo "[racevis] golangci-lint not found — install with: brew install golangci-lint"
+  exit 1
+fi
+
+golangci-lint run ./...
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "[racevis] lint failed. Fix the issues above before committing."
+  exit 1
+fi
+
+echo "[racevis] lint passed."
+exit 0

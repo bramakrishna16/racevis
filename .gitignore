@@ -1,0 +1,30 @@
+
+cat > .gitignore << 'EOF'
+
+cat > .gitignore << 'EOF'
+# Compiled binary
+racevis
+racevis.exe
+
+# JSON timeline exports
+*.json
+out.json
+
+# Runtime trace files
+*.out
+
+# macOS metadata
+.DS_Store
+**/.DS_Store
+__MACOSX/
+
+# Editor directories
+.vscode/
+.idea/
+.claude/
+
+# Test cache
+/tmp/
+
+# Old UI prototype files
+ui/index_*.html
