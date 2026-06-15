@@ -6,16 +6,24 @@ The Go race detector tells you *that* a race happened and *which lines* are invo
 
 racevis runs your tests with the race detector, captures the scheduler trace, and renders an animated timeline where you can see exactly which goroutines collided, on which memory address, and at what point in time. It also suggests how to fix each race.
 
+![racevis ECG timeline demo](docs/assets/demo.gif)
+
 ---
 
-## What it looks like
+## Views
 
-- Each goroutine is a horizontal ECG-style line
-- A pulse moves left to right as time advances
-- When two goroutines touch the same memory address simultaneously, the line turns **red** at that exact moment
-- Hover a collision zone → tooltip explains what happened in plain English
-- Click a collision zone → source panel shows the exact lines of code, side by side
-- Each race card shows a suggested fix with copy-paste ready Go code
+### ECG Timeline
+Each goroutine is a horizontal line. A pulse moves left to right as time advances. When two goroutines touch the same memory address simultaneously, the line turns **red** at that exact moment. Hover a collision zone for a plain-English explanation. Click it to open the source panel.
+
+### Map View
+Browse all detected races as structured cards — each showing the two goroutines involved, the memory address they contested, and a suggested fix.
+
+![racevis map view](docs/assets/map-view.png)
+
+### Source Panel
+Opens when you click a collision zone or race card. Shows the racing lines of code with the exact race line highlighted in red, plus copy-paste ready fix suggestions.
+
+![racevis source panel](docs/assets/source-panel.png)
 
 ---
 
@@ -110,14 +118,17 @@ Each race card shows:
 - The memory address that was contested
 - A suggested fix with copy-paste ready code (click the ▸ triangle to expand)
 
-### Timeline
+### ECG Timeline
 - **Green line** — goroutine running or runnable on a CPU core
 - **Flat baseline** — goroutine blocked (waiting on channel, mutex, sleep, syscall)
 - **Red vertical markers** — collision zone boundaries
 - **⚡ #N label** — which race event this collision belongs to
 
-### Source panel
-Opens when you click a collision zone or race card. Shows the racing lines of code side by side — the goroutine that wrote on the left, the one that read on the right. The exact racing line is highlighted in red.
+### Map View
+Each card shows one race: the two goroutines, their access type (READ/WRITE), the function and file:line for each side, and the fix suggestion. Click any card to open the source panel.
+
+### Source Panel
+Opens when you click a collision zone or race card. Shows the racing lines of code — the goroutine that wrote on the left, the one that read on the right. The exact racing line is highlighted in red. Expand the suggested fix block for copy-paste ready Go code.
 
 ---
 
@@ -202,6 +213,7 @@ racevis/
 │   └── broker_test.go   Realistic task-queue races and a safe comparison
 ├── docs/
 │   ├── DESIGN.md        Full architecture document
+│   ├── assets/          Screenshots and demo GIF for README
 │   └── adr/             15 Architecture Decision Records
 └── scripts/
     └── install-hooks.sh Installs the pre-commit lint hook

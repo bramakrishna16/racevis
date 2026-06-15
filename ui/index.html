@@ -2138,40 +2138,39 @@ function closeSrc() {
   window.__selectedRaceId = null;
 }
 
-// Minimal Go syntax highlighting for the source panel.
-// Escapes HTML first, then applies highlighting spans so that
-// special characters in source code never corrupt the markup.
+// Minimal Go syntax highlighting for the source panel
 function hlGo(raw) {
-  // Step 1: escape HTML entities in the raw source
-  const escaped = raw
+  // Step 1: escape HTML entities FIRST
+  let code = raw
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
-  // Step 2: highlight on the escaped string.
-  // Order matters: comments first (greedy), then strings, then keywords.
-  // Keywords use word-boundary matching to avoid partial matches inside
-  // identifiers — e.g. "format" should not highlight "for".
-  let code = escaped;
+  // Step 2: split on // comment boundary so we only highlight the code part
+  // This avoids running keyword/string regex inside comment text
+  const commentIdx = code.indexOf('//');
+  let codePart = commentIdx === -1 ? code : code.slice(0, commentIdx);
+  const commentPart = commentIdx === -1 ? '' : code.slice(commentIdx);
 
-  // Comments — must run before string/keyword to avoid highlighting inside them
-  code = code.replace(/(\/\/[^\n]*)$/gm,
-    '<span style="color:#5a5a5a">$1</span>');
-
-  // String literals — avoid matching inside already-highlighted spans
-  code = code.replace(/"([^"]*)"/g,
+  // Step 3: string literals — only in the code part
+  codePart = codePart.replace(/"([^"]*)"/g,
     '<span style="color:#fa0">"$1"</span>');
 
-  // Keywords
+  // Step 4: keywords — only in the code part
   const kws = ['func','go','var','type','struct','interface','map','chan','select',
     'if','else','for','range','return','defer','case','default','package','import',
     'const','make','new','nil','true','false','append','len','cap','close'];
   kws.forEach(kw => {
-    code = code.replace(new RegExp(`\\b(${kw})\\b`, 'g'),
+    codePart = codePart.replace(new RegExp(`\\b(${kw})\\b`, 'g'),
       `<span style="color:#c792ea">$1</span>`);
   });
 
-  return code;
+  // Step 5: wrap comment in its own span (no further processing needed)
+  const highlightedComment = commentPart
+    ? `<span style="color:#5a5a5a">${commentPart}</span>`
+    : '';
+
+  return codePart + highlightedComment;
 }
 
 // ================================================================
