@@ -1,12 +1,54 @@
 # racevis
 
+[![CI](https://github.com/bramakrishna16/racevis/actions/workflows/ci.yml/badge.svg)](https://github.com/bramakrishna16/racevis/actions/workflows/ci.yml)
+[![Go 1.22+](https://img.shields.io/badge/go-1.22+-00ADD8.svg)](https://go.dev/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 **An interactive race condition visualizer for Go.**
 
 The Go race detector tells you *that* a race happened and *which lines* are involved — but the output is a wall of text. When multiple goroutines are racing across several functions, reconstructing the timeline mentally is slow and error-prone.
 
-racevis runs your tests with the race detector, captures the scheduler trace, and renders an animated timeline where you can see exactly which goroutines collided, on which memory address, and at what point in time. It also suggests how to fix each race.
+racevis runs your tests with the race detector, captures the Go scheduler trace, and renders an animated ECG-style timeline showing exactly which goroutines collided, on which memory address, and at what moment in time. It also suggests idiomatic Go fixes for each race.
 
 ![racevis ECG timeline demo](docs/assets/demo.gif)
+
+---
+
+## How it works
+
+racevis runs two passes against your package and joins them into a visual timeline:
+
+```
+Your Go package
+      │
+      ├── go test -race ./...          ← Pass 1: race detection
+      │         │
+      │         ▼
+      │   WARNING: DATA RACE blocks
+      │         │
+      │         ▼
+      │   parser/race.go               ← state machine parser → []RaceEvent
+      │
+      ├── go test -trace=file.out .    ← Pass 2: scheduler trace
+      │         │
+      │         ▼
+      │   go tool trace -d=parsed
+      │         │
+      │         ▼
+      │   parser/trace.go              ← event parser → []SchedulerEvent
+      │
+      └── source/reader.go             ← reads source files → []Snippet
+                │
+                ▼
+          correlator.Correlate()       ← joins by goroutine ID
+                │
+                ▼
+          Timeline JSON  ──────────▶  browser (http://localhost:7777)
+```
+
+**Pass 1** instruments every memory access. When two goroutines touch the same address without synchronization, the race detector emits a `WARNING: DATA RACE` block — racevis parses this into structured `RaceEvent` objects with full stack traces.
+
+**Pass 2** captures every goroutine state transition (running → waiting → runnable) with nanosecond timestamps. The correlator joins both datasets on goroutine ID to place red collision zones at the exact moment the race occurred on the timeline.
 
 ---
 
@@ -16,12 +58,12 @@ racevis runs your tests with the race detector, captures the scheduler trace, an
 Each goroutine is a horizontal line. A pulse moves left to right as time advances. When two goroutines touch the same memory address simultaneously, the line turns **red** at that exact moment. Hover a collision zone for a plain-English explanation. Click it to open the source panel.
 
 ### Map View
-Browse all detected races as structured cards — each showing the two goroutines involved, the memory address they contested, and a suggested fix.
+Browse all detected races as structured cards — each showing the two goroutines involved, their access type (READ/WRITE), the memory address they contested, and a suggested fix.
 
 ![racevis map view](docs/assets/map-view.png)
 
 ### Source Panel
-Opens when you click a collision zone or race card. Shows the racing lines of code with the exact race line highlighted in red, plus copy-paste ready fix suggestions.
+Opens when you click a collision zone or race card. Shows the racing lines of code side by side with the exact race line highlighted in red, plus copy-paste ready fix suggestions.
 
 ![racevis source panel](docs/assets/source-panel.png)
 
@@ -89,8 +131,7 @@ racevis -target ./path/to/package -no-server    # prints to stdout
 ### Resolve memory addresses to variable names (experimental)
 ```bash
 racevis -target ./path/to/package -dwarf
-# Shows "variable counter" instead of "0x00c000112198" in tooltips
-# Note: gives container name only for maps, slices, and interfaces
+# Shows "variable counter" instead of "0x00c000112198" in the UI
 ```
 
 ### All flags
@@ -111,7 +152,7 @@ racevis -target ./path/to/package -dwarf
 ## Reading the UI
 
 ### Left panel
-Each test function that spawned goroutines gets its own section. The dropdown at the top lets you filter by a single test. Race-free tests appear under "✓ Safe" in the dropdown; racy tests appear under "⚡ Racy".
+Each test function that spawned goroutines gets its own section. The dropdown at the top lets you filter by a single test.
 
 Each race card shows:
 - Which goroutines were involved and what operation each performed
@@ -120,7 +161,7 @@ Each race card shows:
 
 ### ECG Timeline
 - **Green line** — goroutine running or runnable on a CPU core
-- **Flat baseline** — goroutine blocked (waiting on channel, mutex, sleep, syscall)
+- **Flat baseline** — goroutine blocked (channel, mutex, sleep, syscall)
 - **Red vertical markers** — collision zone boundaries
 - **⚡ #N label** — which race event this collision belongs to
 
@@ -128,38 +169,13 @@ Each race card shows:
 Each card shows one race: the two goroutines, their access type (READ/WRITE), the function and file:line for each side, and the fix suggestion. Click any card to open the source panel.
 
 ### Source Panel
-Opens when you click a collision zone or race card. Shows the racing lines of code — the goroutine that wrote on the left, the one that read on the right. The exact racing line is highlighted in red. Expand the suggested fix block for copy-paste ready Go code.
-
----
-
-## How it works
-
-racevis runs two separate passes against the target package:
-
-**Pass 1 — Race detection**
-```bash
-go test -race -count=1 ./...
-```
-The race detector instruments every memory access. When two goroutines touch the same address without synchronization, it emits a `WARNING: DATA RACE` block. racevis parses this into structured `RaceEvent` objects.
-
-**Pass 2 — Scheduler trace**
-```bash
-go test -count=1 -trace=file.out .
-go tool trace -d=parsed file.out
-```
-The runtime trace captures every goroutine state transition with nanosecond timestamps. racevis parses this into `SchedulerEvent` objects and correlates them with the race events by goroutine ID.
-
-**Report mode** (`-report`)
-The self-contained HTML report bakes the timeline JSON directly into a `<script>` tag before the main application script. The page loads inline data instead of fetching from a server, so it works completely offline.
-
-**Watch mode** (`-watch`)
-A polling loop checks `.go` file modification times every 500ms. On change, racevis re-runs both passes and pushes a reload event to the browser via Server-Sent Events. The browser re-renders without a manual refresh.
+Shows the racing lines of code — the goroutine that wrote on the left, the one that read on the right. The exact racing line is highlighted in red. Expand the suggested fix block for copy-paste ready Go code.
 
 ---
 
 ## Writing tests for race detection
 
-racevis can only find races in code paths exercised by your tests. For concurrent code without tests yet, a minimal test that drives concurrent execution is enough:
+racevis can only find races in code paths exercised by your tests. A minimal concurrent test is enough:
 
 ```go
 func TestMyConcurrentCode(t *testing.T) {
@@ -176,7 +192,7 @@ func TestMyConcurrentCode(t *testing.T) {
 }
 ```
 
-The test doesn't need assertions — its purpose is to drive concurrent execution so the race detector can observe it. Run `racevis -count 3` to run it multiple times and catch races that only manifest under specific scheduling.
+The test doesn't need assertions — its purpose is to drive concurrent execution so the race detector can observe it. Run `racevis -count 3` to repeat multiple times and catch races that only manifest under specific scheduling.
 
 ---
 
@@ -187,7 +203,7 @@ The test doesn't need assertions — its purpose is to drive concurrent executio
 | `counter++` / `counter--` | `++` or `--` on racing line | `sync/atomic` |
 | Concurrent map access | `runtime.mapassign` in stack | `sync.RWMutex` |
 | Lazy singleton init | `== nil` check on racing line | `sync.Once` |
-| Loop variable capture | Closure with loop variable | Capture by value: `i := i` |
+| Loop variable capture | Closure over loop variable | Pass by value: `go func(i int){}(i)` |
 | Struct field access | `.field =` on racing line | `sync.Mutex` embedded in struct |
 | Slice append | `append(` on racing line | Mutex or channel-based fan-in |
 
@@ -199,10 +215,10 @@ The test doesn't need assertions — its purpose is to drive concurrent executio
 racevis/
 ├── main.go              Entry point — CLI flags, orchestration, analysis pipeline
 ├── dwarf.go             Optional DWARF variable name resolution (-dwarf flag)
-├── runner/              Executes go test and go tool trace
+├── runner/              Executes go test and go tool trace, handles retry logic
 ├── parser/
 │   ├── race.go          State machine parser for race detector output
-│   └── trace.go         Parser for scheduler trace events
+│   └── trace.go         Parser for Go scheduler trace events
 ├── correlator/          Joins race events + trace into a Timeline struct
 ├── source/              Reads source files, extracts snippets around race sites
 ├── server/              HTTP server: /api/timeline, /api/events (SSE), static UI
@@ -213,11 +229,13 @@ racevis/
 │   └── broker_test.go   Realistic task-queue races and a safe comparison
 ├── docs/
 │   ├── DESIGN.md        Full architecture document
-│   ├── assets/          Screenshots and demo GIF for README
+│   ├── assets/          Screenshots and demo GIF
 │   └── adr/             15 Architecture Decision Records
 └── scripts/
     └── install-hooks.sh Installs the pre-commit lint hook
 ```
+
+The binary is fully self-contained — `ui/index.html` is embedded at compile time via `go:embed`, so it works from any directory with no assets on disk.
 
 ---
 
@@ -225,23 +243,22 @@ racevis/
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, testing, and coding conventions.
 
-Quick start:
 ```bash
 git clone https://github.com/bramakrishna16/racevis
 cd racevis
-go test ./...         # run all unit tests
-bash scripts/install-hooks.sh  # install pre-commit lint hook
-go run .              # run against the bundled demo
+go test ./...                      # run all unit tests
+bash scripts/install-hooks.sh     # install pre-commit lint hook
+go run .                           # run against the bundled demo
 ```
 
 ---
 
 ## Known limitations
 
-- **Collision zone placement is approximate.** The race detector fires after the fact — racevis places the red zone at the nearest overlapping running windows of the two goroutines, which is an approximation. See ADR-006.
+- **Collision zone placement is approximate.** The race detector fires after the fact — racevis places the red zone at the nearest overlapping running windows of the two goroutines. See ADR-006.
 - **`-trace` covers the root package only.** `go test -trace` does not support `./...`. Goroutines from sub-packages appear only if invoked from the root package's tests. See ADR-008.
-- **DWARF resolution is best-effort.** For maps, slices, and interfaces, only the container variable name is shown (not the key or element being accessed). Stack-allocated variables may not be resolvable if they were inlined or optimized away.
-- **Two passes, non-deterministic.** Race detection is probabilistic — different runs may catch different races. Use `-count N` to run multiple passes and increase coverage.
+- **DWARF resolution is best-effort.** For maps, slices, and interfaces, only the container variable name is shown. Stack-allocated variables may not be resolvable if inlined or optimized away.
+- **Race detection is probabilistic.** Different runs may catch different races. Use `-count N` to increase coverage.
 
 ---
 
