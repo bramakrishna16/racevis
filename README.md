@@ -50,6 +50,13 @@ Your Go package
 
 **Pass 2** captures every goroutine state transition (running → waiting → runnable) with nanosecond timestamps. The correlator joins both datasets on goroutine ID to place red collision zones at the exact moment the race occurred on the timeline.
 
+### Visualized tests
+racevis is not a general test explorer. The UI renders a test group only when:
+- a race event stack involved that `TestXxx`, or
+- the runtime trace has a goroutine creation stack containing that `TestXxx`.
+
+Synchronous tests with no race event and no trace-attributed goroutine lanes are intentionally omitted. This keeps the UI focused on concurrency evidence.
+
 ---
 
 ## Views
@@ -152,7 +159,7 @@ racevis -target ./path/to/package -dwarf
 ## Reading the UI
 
 ### Left panel
-Each test function that spawned goroutines gets its own section. The dropdown at the top lets you filter by a single test.
+The left panel lists visualized tests, not every Go test. A test appears when it was involved in a race event or spawned goroutines visible in the runtime trace. The dropdown at the top lets you filter by a single visualized test.
 
 Each race card shows:
 - Which goroutines were involved and what operation each performed
@@ -255,6 +262,7 @@ go run .                           # run against the bundled demo
 
 ## Known limitations
 
+- **The left panel is not a full test list.** Tests with no race event and no trace-visible goroutine creation stack are omitted by design.
 - **Collision zone placement is approximate.** The race detector fires after the fact — racevis places the red zone at the nearest overlapping running windows of the two goroutines. See ADR-006.
 - **`-trace` covers the root package only.** `go test -trace` does not support `./...`. Goroutines from sub-packages appear only if invoked from the root package's tests. See ADR-008.
 - **DWARF resolution is best-effort.** For maps, slices, and interfaces, only the container variable name is shown. Stack-allocated variables may not be resolvable if inlined or optimized away.

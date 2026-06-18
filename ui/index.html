@@ -1014,7 +1014,7 @@ input[type=range]::-webkit-slider-thumb {
     </div>
     <div style="padding:10px 12px 4px;flex-shrink:0">
       <select id="group-filter">
-        <option value="all">All tests</option>
+        <option value="all">All visualized tests</option>
       </select>
     </div>
     <div id="test-list"></div>
@@ -1023,7 +1023,7 @@ input[type=range]::-webkit-slider-thumb {
       <div style="width:32px;height:0;border-top:1px dotted #2a2a2a;border-bottom:1px dotted #2a2a2a;padding:1px 0"></div>
     </div>
     <div class="detail" id="race-detail">
-      <div style="color:var(--dim);font-size:10px">click a test to see its races</div>
+      <div style="color:var(--dim);font-size:10px">click a visualized test to see its races</div>
     </div>
 
   </div>
@@ -1263,7 +1263,10 @@ function renderTestList() {
 
   const groups = tl.groups ?? [];
   if (groups.length === 0) {
-    list.innerHTML = '<div style="padding:10px 12px;color:var(--dim);font-size:10px">No test groups found</div>';
+    const races = tl.raceEvents?.length ?? 0;
+    list.innerHTML = races === 0
+      ? '<div style="padding:10px 12px;color:#41cf6e;font-size:11px;font-weight:700">No data races found</div><div style="padding:2px 12px;color:var(--dim);font-size:10px">Tests completed without race detector findings.</div>'
+      : '<div style="padding:10px 12px;color:var(--dim);font-size:10px">No test groups found</div>';
     return;
   }
 
@@ -1300,12 +1303,12 @@ function renderTestList() {
     }
   };
 
-  // "All tests" item
+  // "All visualized tests" item
   const allEl = document.createElement('div');
   allEl.className = 'test-item active';
   allEl.id = 'item-all';
   allEl.innerHTML = `
-    <div class="t-name">All tests</div>
+    <div class="t-name">All visualized tests</div>
     <div class="t-meta">
       <span class="cnt">${tl.raceEvents?.length ?? 0} data races</span>
       · <span class="go">${tl.lanes?.length ?? 0} goroutines</span>
@@ -1461,7 +1464,9 @@ function renderDetail(testName) {
   panel.innerHTML = '';
 
   if (!testName) {
-    panel.innerHTML = '<div style="color:var(--dim);font-size:10px">click a test to see its races</div>';
+    panel.innerHTML = (tl.raceEvents?.length ?? 0) === 0
+      ? '<div style="color:#41cf6e;font-size:12px;font-weight:700">No data races found</div><div style="color:var(--dim);font-size:10px;margin-top:4px">There are no race details to inspect for this run.</div>'
+      : '<div style="color:var(--dim);font-size:10px">click a visualized test to see its races</div>';
     return;
   }
   const group = (tl.groups ?? []).find(g => g.testName === testName);
@@ -2253,14 +2258,15 @@ function shortPath(p) {
 
 // shortFn strips the package prefix but preserves method receivers and
 // anonymous function suffixes intact.
-// "racy.(*UnsafeBroker).Dequeue" → "(*UnsafeBroker).Dequeue"
-// "racy.RunCounterRace.func1"    → "RunCounterRace.func1"
+// "github.com/acme/pkg.TestRace.func1" → "TestRace.func1"
+// "database/sql.(*Rows).awaitDone"     → "(*Rows).awaitDone"
 function shortFn(fn) {
   if (!fn) return '';
-  const parts = fn.split('.');
-  // If first segment looks like a package name (no parens), strip it
-  if (parts.length > 1 && !parts[0].startsWith('(')) {
-    return parts.slice(1).join('.');
+  const slash = fn.lastIndexOf('/');
+  if (slash >= 0) fn = fn.slice(slash + 1);
+  const dot = fn.indexOf('.');
+  if (dot >= 0 && !fn.startsWith('(')) {
+    return fn.slice(dot + 1);
   }
   return fn;
 }

@@ -198,6 +198,61 @@ func TestCorrelate_GroupsOrganizedByTest(t *testing.T) {
 	}
 }
 
+func TestCorrelate_RaceCreationStackFallbackUsesRealTestName(t *testing.T) {
+	race := makeRace(1, 7, 8, "0xAAA", "write/read")
+	race.CreationA = []parser.StackFrame{
+		{Function: "github.com/bramakrishna16/taskqueue/internal/broker.TestBrokerRace.func1"},
+	}
+	race.CreationB = []parser.StackFrame{
+		{Function: "database/sql.(*Rows).awaitDone"},
+	}
+
+	tl := Correlate([]parser.RaceEvent{race}, nil)
+
+	if len(tl.Groups) != 1 {
+		t.Fatalf("groups: want 1, got %d", len(tl.Groups))
+	}
+	if tl.Groups[0].TestName != "TestBrokerRace" {
+		t.Fatalf("group name: want %q, got %q", "TestBrokerRace", tl.Groups[0].TestName)
+	}
+}
+
+func TestCorrelate_TraceGroupsOnlyRealTests(t *testing.T) {
+	tr := makeTrace(nil, 1000, 5000)
+	tr.Goroutines[7] = &parser.GoroutineInfo{
+		ID:        7,
+		FirstSeen: 1000,
+		LastSeen:  5000,
+		Events: []parser.SchedulerEvent{
+			{GoroutineID: 7, TimestampNs: 1000, FromState: parser.GoStateNotExist, ToState: parser.GoStateRunnable},
+		},
+		Creation: &parser.CreationInfo{TestName: "TestBrokerRace"},
+	}
+	tr.Goroutines[8] = &parser.GoroutineInfo{
+		ID:        8,
+		FirstSeen: 1000,
+		LastSeen:  5000,
+		Events: []parser.SchedulerEvent{
+			{GoroutineID: 8, TimestampNs: 1000, FromState: parser.GoStateNotExist, ToState: parser.GoStateRunnable},
+		},
+		Creation: &parser.CreationInfo{BirthFunc: "(*Rows).awaitDone"},
+	}
+	tr.Events = append(tr.Events, tr.Goroutines[7].Events...)
+	tr.Events = append(tr.Events, tr.Goroutines[8].Events...)
+
+	tl := Correlate(nil, tr)
+
+	if len(tl.Groups) != 1 {
+		t.Fatalf("groups: want 1, got %d", len(tl.Groups))
+	}
+	if tl.Groups[0].TestName != "TestBrokerRace" {
+		t.Fatalf("group name: want %q, got %q", "TestBrokerRace", tl.Groups[0].TestName)
+	}
+	if len(tl.Groups[0].Lanes) != 1 {
+		t.Fatalf("lanes in group: want 1, got %d", len(tl.Groups[0].Lanes))
+	}
+}
+
 func TestBestRunningWindow_NoEvents(t *testing.T) {
 	tr := &parser.TraceResult{
 		MinTime: 1000,

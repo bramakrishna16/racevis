@@ -17,7 +17,6 @@ import (
 	"github.com/bramakrishna16/racevis/parser"
 	"log"
 	"sort"
-	"strings"
 )
 
 // ---- Core data types ----
@@ -409,12 +408,8 @@ func buildGroups(tl *Timeline, tr *parser.TraceResult) {
 func inferTestFromRace(race parser.RaceEvent) string {
 	for _, frames := range [][]parser.StackFrame{race.CreationA, race.CreationB} {
 		for _, f := range frames {
-			fn := f.Function
-			if dot := strings.LastIndex(fn, "."); dot >= 0 {
-				fn = fn[dot+1:]
-			}
-			if strings.HasPrefix(fn, "Test") {
-				return fn
+			if name := parser.TestNameFromFunction(f.Function); name != "" {
+				return name
 			}
 		}
 	}

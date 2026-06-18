@@ -244,31 +244,44 @@ func buildCreation(trans, stack []stackFrame, createdByG uint64) *CreationInfo {
 
 	// TestName = first TestXxx frame in the spawner Stack
 	for _, f := range stack {
-		name := shortName(f.fn)
-		if strings.HasPrefix(name, "Test") && !strings.HasPrefix(f.fn, "testing.") {
+		if name := TestNameFromFunction(f.fn); name != "" {
 			ci.TestName = name
 			break
-		}
-	}
-
-	// Fallback: first non-runtime, non-testing frame
-	if ci.TestName == "" {
-		for _, f := range stack {
-			if !strings.HasPrefix(f.fn, "runtime.") && !strings.HasPrefix(f.fn, "testing.") && f.fn != "" {
-				ci.TestName = shortName(f.fn)
-				break
-			}
 		}
 	}
 
 	return ci
 }
 
-// shortName strips the package prefix: "racy.TestCounterRace" → "TestCounterRace"
+// shortName strips module path and package prefix:
+// "github.com/acme/pkg.TestFoo" -> "TestFoo".
 func shortName(fn string) string {
-	// Strip only the package prefix: "racy.RunCounterRace.func1" -> "RunCounterRace.func1"
+	if i := strings.LastIndex(fn, "/"); i >= 0 {
+		fn = fn[i+1:]
+	}
 	if i := strings.Index(fn, "."); i >= 0 {
 		return fn[i+1:]
+	}
+	return fn
+}
+
+// TestNameFromFunction returns a package-level Go test function name from a
+// fully qualified runtime function, or "" when the function is not a test.
+func TestNameFromFunction(fn string) string {
+	if strings.HasPrefix(fn, "testing.") {
+		return ""
+	}
+	if i := strings.LastIndex(fn, "/"); i >= 0 {
+		fn = fn[i+1:]
+	}
+	if i := strings.Index(fn, "."); i >= 0 {
+		fn = fn[i+1:]
+	}
+	if i := strings.Index(fn, "."); i >= 0 {
+		fn = fn[:i]
+	}
+	if fn == "TestMain" || !strings.HasPrefix(fn, "Test") {
+		return ""
 	}
 	return fn
 }
